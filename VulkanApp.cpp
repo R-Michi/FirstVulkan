@@ -346,7 +346,7 @@ void FirstVulkan::vulkan_init(void)
 	color_blend_info.blendConstants[2] = 0.0f;	// b
 	color_blend_info.blendConstants[3] = 0.0f;	// a
 
-	// create uniform layout
+	// create pipeline layout
 	VkPipelineLayoutCreateInfo pipeline_layout_info;
 	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipeline_layout_info.pNext = nullptr;
