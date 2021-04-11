@@ -5,15 +5,19 @@ cmake_minimum_required (VERSION 3.8)
 project("FirstVulkan")
 
 include_directories("C:/VulkanSDK/1.2.170.0/Include"
-					"./lib/glfw-3.3.3/include"
-					"./lib/glm")
+					"${CMAKE_CURRENT_SOURCE_DIR}/lib/glfw-3.3.3/include"
+					"${CMAKE_CURRENT_SOURCE_DIR}/lib/glm")
 
 link_directories("C:/VulkanSDK/1.2.170.0/Lib"
-				 "./lib/glfw-3.3.3/lib"
-				 "./lib/glm/glm/lib")
+				 "${CMAKE_CURRENT_SOURCE_DIR}/lib/glfw-3.3.3/lib"
+				 "${CMAKE_CURRENT_SOURCE_DIR}/lib/glm/glm/lib")
 
 add_executable(first_vulkan "main.cpp" "VulkanApp.cpp")
 target_link_libraries(first_vulkan PRIVATE "-lglm_static" "-lglfw3" "-lvulkan-1")
+
+add_custom_command(TARGET first_vulkan 
+				   PRE_BUILD COMMAND "compile_shader.bat"
+				   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # additional work
 set(CMAKE_EXPORT_COMPILE_COMMANDS on)

@@ -1,0 +1,2 @@
+C:/VulkanSDK/1.2.170.0/Bin/glslangValidator.exe -V ./shader/main.vert -o ./shader/spir-v/main_vert.spv
+C:/VulkanSDK/1.2.170.0/Bin/glslangValidator.exe -V ./shader/main.frag -o ./shader/spir-v/main_frag.spv

@@ -1,14 +1,18 @@
 #version 460 core
 #extension GL_ARB_separate_shader_objects : enable	// is requiered to use GLSL shaders in vulkan
-#extension GL_KHR_vulkan_glsl : enable				// needed to trick the code completion, prints a warning (not supported)
 
-vec2 positions[3] = vec2[](
-	vec2(0.0f, -0.5f),
-	vec2(0.5f, 0.5f),
-	vec2(-0.5f, 0.5f)
-);
+layout (location = 0) in vec3 a_Pos;
+layout (location = 1) in vec4 a_Color;
+
+layout (location = 0) out vec4 frag_color;
+
+layout (binding = 0) uniform UBO 
+{
+	mat4 MVP;
+} ubo;
 
 void main()
 {
-	gl_Position = vec4(positions[gl_VertexIndex], 0.0f, 1.0f);
+	gl_Position = ubo.MVP * vec4(a_Pos, 1.0f);
+	frag_color = a_Color;
 }
