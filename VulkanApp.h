@@ -11,6 +11,7 @@ class FirstVulkan
 	{
 		glm::vec3 pos;
 		glm::vec4 color;
+		glm::vec2 uv_coord;
 
 		static void get_binding_description(VkVertexInputBindingDescription& description);
 		static void get_attrib_descriptions(std::vector<VkVertexInputAttributeDescription>& descriptions);
@@ -35,12 +36,19 @@ private:
 	VkSemaphore semaphore_img_aviable;		// first render step
 	VkSemaphore semaphore_rendering_done;	// second render step
 	VkQueue queue;
+
 	VkBuffer vertex_buffer;
 	VkBuffer index_buffer;
 	VkBuffer uniform_buffer;
 	VkDeviceMemory vertex_buffer_memory;
 	VkDeviceMemory index_buffer_memory;
 	VkDeviceMemory uniform_buffer_memory;
+
+	VkImage texture1_image;
+	VkDeviceMemory texture1_memory;
+	VkImageView texture1_view;
+	VkImageLayout texture1_layout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+	VkSampler texture1_sampler;
 
 	VkDebugReportCallbackEXT debug_report_callback; 
 	
@@ -74,6 +82,7 @@ private:
 	void vulkan_create_command_pool(void);
 	void vulkan_create_command_buffers(void);
 	void vulkan_create_semaphores(void);
+	void vulkan_load_texture(void);
 	void vulkan_create_vertex_buffer(void);
 	void vulkan_create_uniform_buffer(void);
 	void vulkan_create_descriptor_pool(void);
@@ -83,6 +92,8 @@ private:
 	uint32_t vulkan_find_mem_type_index(uint32_t type_filter, VkMemoryPropertyFlags properties);
 	void vulkan_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage_flags, VkBuffer& buffer, VkMemoryPropertyFlags mem_flags, VkDeviceMemory& device_mem);
 	void vulkan_copy_buffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
+	void vulkan_change_layout(VkCommandPool cmd_pool, VkQueue queue, VkImageLayout layout);
+	void vulkan_write_buffer_to_image(VkCommandPool cmd_pool, VkQueue queue, VkBuffer buff, int w, int h);
 	void vulkan_init(void);
 
 	template<typename T>

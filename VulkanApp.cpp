@@ -3,6 +3,16 @@
 #include <fstream>
 #include <glm/gtc/matrix_transform.hpp>
 
+#define STB_IMAGE_IMPLEMENTATION
+#ifdef __clang__  
+	#pragma clang diagnostic push
+	#pragma clang diagnostic ignored "-Wempty-body"
+		#include <stb/stb_image.h>
+	#pragma clang diagnostic pop
+#else
+	#include <stb/stb_image.h>
+#endif
+
 #define ASSERT_VULKAN(value)\
 		if(value != VK_SUCCESS)\
 			asm("int $3");			// causes a break in the program
@@ -36,7 +46,7 @@ void FirstVulkan::vertex_t::get_binding_description(VkVertexInputBindingDescript
 
 void FirstVulkan::vertex_t::get_attrib_descriptions(std::vector<VkVertexInputAttributeDescription>& descriptions)
 {
-	descriptions.resize(2, {});
+	descriptions.resize(3, {});
 
 	descriptions[0].location = 0;
 	descriptions[0].binding = 0;
@@ -46,16 +56,21 @@ void FirstVulkan::vertex_t::get_attrib_descriptions(std::vector<VkVertexInputAtt
 	descriptions[1].location = 1;
 	descriptions[1].binding = 0;
 	descriptions[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;	// r, g, b, a - float
-	descriptions[1].offset = 3 * sizeof(float);
+	descriptions[1].offset = sizeof(glm::vec3);
+
+	descriptions[2].location = 2;
+	descriptions[2].binding = 0;
+	descriptions[2].format = VK_FORMAT_R32G32_SFLOAT;	// u, v - float
+	descriptions[2].offset = sizeof(glm::vec3) + sizeof(glm::vec4);
 }
 
 FirstVulkan::FirstVulkan(void)
 {
 	this->vertices = {
-		{ {-0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
-		{ { 0.5f,  0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
-		{ {-0.5f,  0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } },
-		{ { 0.5f, -0.5f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f } }
+		{ {-0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f }, {0.0f, 0.0f} },
+		{ { 0.5f,  0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f }, {1.0f, 1.0f} },
+		{ {-0.5f,  0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f }, {0.0f, 1.0f} },
+		{ { 0.5f, -0.5f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, {1.0f, 0.0f} }
 
 	};
 
@@ -164,6 +179,7 @@ void FirstVulkan::vulkan_create_device(void)
 	device_queue_info.pQueuePriorities = queue_priorities;
 
 	VkPhysicalDeviceFeatures used_device_features = {};	// no features used yet
+	used_device_features.samplerAnisotropy = VK_TRUE;
 
 	// extensions at device level
 	std::vector<const char*> device_extensions = {
@@ -347,19 +363,31 @@ void FirstVulkan::vulkan_create_shader_modules(void)
 
 void FirstVulkan::vulkan_create_descriptor_set_layout(void)
 {
-	VkDescriptorSetLayoutBinding descr_set_binding = {};
-	descr_set_binding.binding = 0;
-	descr_set_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	descr_set_binding.descriptorCount = 1;
-	descr_set_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	descr_set_binding.pImmutableSamplers = nullptr;
+	VkDescriptorSetLayoutBinding uniform_set_binding = {};
+	uniform_set_binding.binding = 0;
+	uniform_set_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uniform_set_binding.descriptorCount = 1;
+	uniform_set_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	uniform_set_binding.pImmutableSamplers = nullptr;
+
+	VkDescriptorSetLayoutBinding sampler_set_binding = {};
+	sampler_set_binding.binding = 1;
+	sampler_set_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	sampler_set_binding.descriptorCount = 1;
+	sampler_set_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	sampler_set_binding.pImmutableSamplers = nullptr;
+
+	std::vector<VkDescriptorSetLayoutBinding> descriptor_set_layouts = {
+		uniform_set_binding,
+		sampler_set_binding
+	};
 
 	VkDescriptorSetLayoutCreateInfo descr_set_info = {};
 	descr_set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	descr_set_info.pNext = nullptr;
 	descr_set_info.flags = 0;
-	descr_set_info.bindingCount = 1;
-	descr_set_info.pBindings = &descr_set_binding;
+	descr_set_info.bindingCount = descriptor_set_layouts.size();
+	descr_set_info.pBindings = descriptor_set_layouts.data();
 	
 	VkResult result = vkCreateDescriptorSetLayout(this->device, &descr_set_info, nullptr, &this->descriptor_set_layout);
 	ASSERT_VULKAN(result);
@@ -498,7 +526,7 @@ void FirstVulkan::vulkan_create_pipeline(void)
 		VK_DYNAMIC_STATE_SCISSOR
 	};
 
-	VkPipelineDynamicStateCreateInfo dynamic_state_info;
+	VkPipelineDynamicStateCreateInfo dynamic_state_info = {};
 	dynamic_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
 	dynamic_state_info.pNext = nullptr;
 	dynamic_state_info.flags = 0;
@@ -656,6 +684,133 @@ uint32_t FirstVulkan::vulkan_find_mem_type_index(uint32_t type_filter, VkMemoryP
 	throw std::runtime_error("Found no correct memory type!");
 }
 
+void FirstVulkan::vulkan_load_texture(void)
+{
+	int w, h, c;
+	stbi_uc* img_data = stbi_load("../../../textures/texture1.jpg", &w, &h, &c, 4);
+
+	std::cout << "Image width: " << w << std::endl;
+	std::cout << "Image height: " << h << std::endl;
+	std::cout << "Image color channels: " << c << std::endl;
+	std::cout << "Number of pixels: " << w * h << std::endl;
+
+	c = 4; // force loaded 4 channels
+
+	if (img_data == nullptr)
+		throw std::runtime_error("Unable to load texture!");
+
+	VkDeviceSize byte_size = byte_size = w * h * c;
+	
+	// create staging buffer + memory for texture
+	VkBuffer texture1_staging_buffer = {};
+	VkDeviceMemory texture1_staging_buffer_mem = {};
+	this->vulkan_create_buffer(byte_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, texture1_staging_buffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, texture1_staging_buffer_mem);
+
+	// load texture in staging buffer (is still in RAM)
+	void* tex_map;
+	vkMapMemory(this->device, texture1_staging_buffer_mem, 0, byte_size, 0, &tex_map);
+	memcpy(tex_map, img_data, byte_size);
+	vkUnmapMemory(this->device, texture1_staging_buffer_mem);
+
+	VkImageCreateInfo tex1_info = {};
+	tex1_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	tex1_info.pNext = nullptr;
+	tex1_info.flags = 0;
+	tex1_info.imageType = VK_IMAGE_TYPE_2D;
+	tex1_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	tex1_info.extent.width = w;
+	tex1_info.extent.height = h;
+	tex1_info.extent.depth = 1;
+	tex1_info.mipLevels = 1;
+	tex1_info.arrayLayers = 1;
+	tex1_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	tex1_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	tex1_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;	// pixels get transfered from staging buffer into the image and it should be sampled
+	tex1_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	tex1_info.queueFamilyIndexCount = 0;				// we dont share the queues between multiple queue families
+	tex1_info.pQueueFamilyIndices = nullptr;
+	tex1_info.initialLayout = this->texture1_layout;
+
+	// create image for texture
+	VkResult result = vkCreateImage(this->device, &tex1_info, nullptr, &this->texture1_image);
+	ASSERT_VULKAN(result);
+
+	// memory requierements of texture's image
+	VkMemoryRequirements mem_req = {};
+	vkGetImageMemoryRequirements(this->device, this->texture1_image, &mem_req);
+
+	// allocation info for texture's memory
+	VkMemoryAllocateInfo mem_alloc_info = {};
+	mem_alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	mem_alloc_info.pNext = nullptr;
+	mem_alloc_info.allocationSize = mem_req.size;
+	mem_alloc_info.memoryTypeIndex = this->vulkan_find_mem_type_index(mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// allocate actual memory on the GPU for the image
+	result = vkAllocateMemory(this->device, &mem_alloc_info, nullptr, &this->texture1_memory);
+	ASSERT_VULKAN(result);
+
+	// upload texture1 to GPU
+	vkBindImageMemory(this->device, this->texture1_image, this->texture1_memory, 0);
+
+	// change layout of image that data can be transfered to the image memory
+	this->vulkan_change_layout(this->cmd_pool, this->queue, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+	// write buffer to image
+	this->vulkan_write_buffer_to_image(this->cmd_pool, this->queue, texture1_staging_buffer, w, h);
+
+	// change layout of image that the shader can read the image most effectively
+	this->vulkan_change_layout(this->cmd_pool, this->queue, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	vkDestroyBuffer(this->device, texture1_staging_buffer, nullptr);
+	vkFreeMemory(this->device, texture1_staging_buffer_mem, nullptr);
+
+	VkImageViewCreateInfo tex1_img_view_info = {};
+	tex1_img_view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	tex1_img_view_info.pNext = nullptr;
+	tex1_img_view_info.flags = 0;
+	tex1_img_view_info.image = this->texture1_image;
+	tex1_img_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	tex1_img_view_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	tex1_img_view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	tex1_img_view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	tex1_img_view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	tex1_img_view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	tex1_img_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	tex1_img_view_info.subresourceRange.baseMipLevel = 0;
+	tex1_img_view_info.subresourceRange.levelCount = 1;
+	tex1_img_view_info.subresourceRange.baseArrayLayer = 0;
+	tex1_img_view_info.subresourceRange.layerCount = 1;
+
+	result = vkCreateImageView(this->device, &tex1_img_view_info, nullptr, &this->texture1_view);
+	ASSERT_VULKAN(result);
+
+	VkSamplerCreateInfo sampler_info = {};
+	sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler_info.pNext = nullptr;
+	sampler_info.flags = 0;
+	sampler_info.magFilter = VK_FILTER_LINEAR;
+	sampler_info.minFilter = VK_FILTER_LINEAR;
+	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	sampler_info.mipLodBias = 0.0f;
+	sampler_info.anisotropyEnable = VK_TRUE;
+	sampler_info.maxAnisotropy = 4;	// maximum filter strength = 16
+	sampler_info.compareEnable = VK_FALSE;	// used for shadow maps (shadow samplers) equal to OpenGL's texture parameter GL_COMPARE_R_TO_TEXTURE
+	sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
+	sampler_info.minLod = 0.0f;	// level of detail
+	sampler_info.maxLod = 0.0f;
+	sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+	sampler_info.unnormalizedCoordinates = VK_FALSE;
+
+	result = vkCreateSampler(this->device, &sampler_info, nullptr, &this->texture1_sampler);
+	ASSERT_VULKAN(result);
+
+	stbi_image_free(img_data);
+}
+
 void FirstVulkan::vulkan_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage_flags, VkBuffer& buffer, VkMemoryPropertyFlags mem_flags, VkDeviceMemory& device_mem)
 {
 	VkBufferCreateInfo buffer_info = {};
@@ -761,17 +916,26 @@ void FirstVulkan::vulkan_create_uniform_buffer(void)
 
 void FirstVulkan::vulkan_create_descriptor_pool(void)
 {
-	VkDescriptorPoolSize descr_pool_size = {};
-	descr_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	descr_pool_size.descriptorCount = 1;
+	VkDescriptorPoolSize uniform_pool_size = {};
+	uniform_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uniform_pool_size.descriptorCount = 1;
+
+	VkDescriptorPoolSize sampler_pool_size = {};
+	sampler_pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	sampler_pool_size.descriptorCount = 1;
+
+	std::vector<VkDescriptorPoolSize> descriptor_pool_sizes = {
+		uniform_pool_size,
+		sampler_pool_size
+	};
 
 	VkDescriptorPoolCreateInfo descr_pool_info = {};
 	descr_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	descr_pool_info.pNext = nullptr;
 	descr_pool_info.flags = 0;
 	descr_pool_info.maxSets = 1;
-	descr_pool_info.poolSizeCount = 1;
-	descr_pool_info.pPoolSizes = &descr_pool_size;
+	descr_pool_info.poolSizeCount = descriptor_pool_sizes.size();
+	descr_pool_info.pPoolSizes = descriptor_pool_sizes.data();
 
 	VkResult result = vkCreateDescriptorPool(this->device, &descr_pool_info, nullptr, &this->descriptor_pool);
 	ASSERT_VULKAN(result);
@@ -789,24 +953,48 @@ void FirstVulkan::vulkan_create_descriptor_set(void)
 	VkResult result = vkAllocateDescriptorSets(this->device, &descr_set_alloc_info, &this->descriptor_set);
 	ASSERT_VULKAN(result);
 
+	// descriptor info for uniform buffer
 	VkDescriptorBufferInfo descr_buffer_info = {};
 	descr_buffer_info.buffer = this->uniform_buffer;
 	descr_buffer_info.offset = 0;
 	descr_buffer_info.range = sizeof(MVP);
 
-	VkWriteDescriptorSet write_descr_set = {};
-	write_descr_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write_descr_set.pNext = nullptr;
-	write_descr_set.dstSet = this->descriptor_set;
-	write_descr_set.dstBinding = 0;
-	write_descr_set.dstArrayElement = 0;
-	write_descr_set.descriptorCount = 1;
-	write_descr_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	write_descr_set.pImageInfo = nullptr;
-	write_descr_set.pBufferInfo = &descr_buffer_info;
-	write_descr_set.pTexelBufferView = nullptr;
+	VkWriteDescriptorSet write_uniform_set = {};
+	write_uniform_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write_uniform_set.pNext = nullptr;
+	write_uniform_set.dstSet = this->descriptor_set;
+	write_uniform_set.dstBinding = 0;
+	write_uniform_set.dstArrayElement = 0;
+	write_uniform_set.descriptorCount = 1;
+	write_uniform_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	write_uniform_set.pImageInfo = nullptr;
+	write_uniform_set.pBufferInfo = &descr_buffer_info;
+	write_uniform_set.pTexelBufferView = nullptr;
 
-	vkUpdateDescriptorSets(this->device, 1, &write_descr_set, 0, nullptr);
+	// descriptor info for texture sampler (texture1)
+	VkDescriptorImageInfo descr_image_info = {};
+	descr_image_info.sampler = this->texture1_sampler;
+	descr_image_info.imageView = this->texture1_view;
+	descr_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VkWriteDescriptorSet write_sampler_set = {};
+	write_sampler_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write_sampler_set.pNext = nullptr;
+	write_sampler_set.dstSet = this->descriptor_set;
+	write_sampler_set.dstBinding = 1;
+	write_sampler_set.dstArrayElement = 0;
+	write_sampler_set.descriptorCount = 1;
+	write_sampler_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write_sampler_set.pImageInfo = &descr_image_info;
+	write_sampler_set.pBufferInfo = nullptr;
+	write_sampler_set.pTexelBufferView = nullptr;
+
+	std::vector<VkWriteDescriptorSet> write_descr_sets = {
+		write_uniform_set,
+		write_sampler_set
+	};
+
+	vkUpdateDescriptorSets(this->device, write_descr_sets.size(), write_descr_sets.data(), 0, nullptr);
 }
 
 void FirstVulkan::vulkan_record_command_buffers(void)
@@ -873,6 +1061,143 @@ void FirstVulkan::vulkan_record_command_buffers(void)
 	}
 }
 
+void FirstVulkan::vulkan_change_layout(VkCommandPool cmd_pool, VkQueue queue, VkImageLayout layout)
+{
+	VkCommandBufferAllocateInfo cmd_buff_info = {};
+	cmd_buff_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cmd_buff_info.pNext = nullptr;
+	cmd_buff_info.commandPool = cmd_pool;
+	cmd_buff_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	cmd_buff_info.commandBufferCount = 1;
+
+	VkCommandBuffer tmp_cmd_buffer = {};
+	VkResult result = vkAllocateCommandBuffers(this->device, &cmd_buff_info, &tmp_cmd_buffer);
+	ASSERT_VULKAN(result);
+
+	VkCommandBufferBeginInfo cmd_buff_begin_info = {};
+	cmd_buff_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmd_buff_begin_info.pNext = nullptr;
+	cmd_buff_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	cmd_buff_begin_info.pInheritanceInfo = nullptr;
+
+	result = vkBeginCommandBuffer(tmp_cmd_buffer, &cmd_buff_begin_info);
+	ASSERT_VULKAN(result);
+
+	// image memory barrier needed that no other queue can read from that memory while another queue is changing something
+	VkImageMemoryBarrier mem_barrier = {};
+	mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	mem_barrier.pNext = nullptr;
+
+	if (this->texture1_layout == VK_IMAGE_LAYOUT_PREINITIALIZED && layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+	{
+		mem_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+		mem_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	}
+	else if (this->texture1_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+	{
+		mem_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	}
+	else
+	{
+		throw std::invalid_argument("Layout transition not yet supported!");
+	}
+
+	mem_barrier.oldLayout = this->texture1_layout;
+	mem_barrier.newLayout = layout;
+	mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	mem_barrier.image = this->texture1_image;
+	mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	mem_barrier.subresourceRange.baseMipLevel = 0;
+	mem_barrier.subresourceRange.levelCount = 1;
+	mem_barrier.subresourceRange.baseArrayLayer = 0;
+	mem_barrier.subresourceRange.layerCount = 1;
+
+	if (this->texture1_layout == VK_IMAGE_LAYOUT_PREINITIALIZED && layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+		vkCmdPipelineBarrier(tmp_cmd_buffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &mem_barrier);
+	else if (this->texture1_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+		vkCmdPipelineBarrier(tmp_cmd_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &mem_barrier);
+
+	result = vkEndCommandBuffer(tmp_cmd_buffer);
+	ASSERT_VULKAN(result);
+
+	VkSubmitInfo submit_info = {};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.pNext = nullptr;
+	submit_info.waitSemaphoreCount = 0;
+	submit_info.pWaitSemaphores = nullptr;
+	submit_info.pWaitDstStageMask = nullptr;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &tmp_cmd_buffer;
+	submit_info.signalSemaphoreCount = 0;
+	submit_info.pSignalSemaphores = nullptr;
+
+	result = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+	ASSERT_VULKAN(result);
+	vkQueueWaitIdle(queue);
+
+	vkFreeCommandBuffers(this->device, cmd_pool, 1, &tmp_cmd_buffer);
+
+	this->texture1_layout = layout;
+}
+
+void FirstVulkan::vulkan_write_buffer_to_image(VkCommandPool cmd_pool, VkQueue queue, VkBuffer buff, int w, int h)
+{
+	VkCommandBufferAllocateInfo cmd_buff_info = {};
+	cmd_buff_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cmd_buff_info.pNext = nullptr;
+	cmd_buff_info.commandPool = cmd_pool;
+	cmd_buff_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	cmd_buff_info.commandBufferCount = 1;
+
+	VkCommandBuffer tmp_cmd_buffer = {};
+	VkResult result = vkAllocateCommandBuffers(this->device, &cmd_buff_info, &tmp_cmd_buffer);
+	ASSERT_VULKAN(result);
+
+	VkCommandBufferBeginInfo cmd_buff_begin_info = {};
+	cmd_buff_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmd_buff_begin_info.pNext = nullptr;
+	cmd_buff_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	cmd_buff_begin_info.pInheritanceInfo = nullptr;
+
+	result = vkBeginCommandBuffer(tmp_cmd_buffer, &cmd_buff_begin_info);
+	ASSERT_VULKAN(result);
+
+	VkBufferImageCopy buff_img_cpy = {};
+	buff_img_cpy.bufferOffset = 0;
+	buff_img_cpy.bufferRowLength = 0;
+	buff_img_cpy.bufferImageHeight = 0;
+	buff_img_cpy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	buff_img_cpy.imageSubresource.mipLevel = 0;
+	buff_img_cpy.imageSubresource.baseArrayLayer = 0;
+	buff_img_cpy.imageSubresource.layerCount = 1;
+	buff_img_cpy.imageOffset = { 0, 0, 0 };
+	buff_img_cpy.imageExtent = { (uint32_t)w, (uint32_t)h, 1};
+
+	vkCmdCopyBufferToImage(tmp_cmd_buffer, buff, this->texture1_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buff_img_cpy);
+
+	result = vkEndCommandBuffer(tmp_cmd_buffer);
+	ASSERT_VULKAN(result);
+
+	VkSubmitInfo submit_info = {};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.pNext = nullptr;
+	submit_info.waitSemaphoreCount = 0;
+	submit_info.pWaitSemaphores = nullptr;
+	submit_info.pWaitDstStageMask = nullptr;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &tmp_cmd_buffer;
+	submit_info.signalSemaphoreCount = 0;
+	submit_info.pSignalSemaphores = nullptr;
+
+	result = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+	ASSERT_VULKAN(result);
+	vkQueueWaitIdle(queue);
+
+	vkFreeCommandBuffers(this->device, cmd_pool, 1, &tmp_cmd_buffer);
+}
+
 void FirstVulkan::vulkan_init(void)
 {
 	this->vulkan_create_app_info();
@@ -889,6 +1214,7 @@ void FirstVulkan::vulkan_init(void)
 	this->vulkan_create_pipeline();
 	this->vulkan_create_framebuffers();
 	this->vulkan_create_command_pool();
+	this->vulkan_load_texture();
 	this->vulkan_create_vertex_buffer();
 	this->vulkan_create_uniform_buffer();
 	this->vulkan_create_descriptor_pool();
@@ -928,6 +1254,11 @@ void FirstVulkan::glfw_init(void)
 void FirstVulkan::vulkan_destroy(void)
 {
 	vkDeviceWaitIdle(this->device);
+
+	vkDestroySampler(this->device, this->texture1_sampler, nullptr);
+	vkDestroyImageView(this->device, this->texture1_view, nullptr);
+	vkDestroyImage(this->device, this->texture1_image, nullptr);
+	vkFreeMemory(this->device, this->texture1_memory, nullptr);
 
 	vkDestroyDescriptorSetLayout(this->device, this->descriptor_set_layout, nullptr);
 	vkDestroyDescriptorPool(this->device, this->descriptor_pool, nullptr);

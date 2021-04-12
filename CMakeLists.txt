@@ -6,7 +6,8 @@ project("FirstVulkan")
 
 include_directories("C:/VulkanSDK/1.2.170.0/Include"
 					"${CMAKE_CURRENT_SOURCE_DIR}/lib/glfw-3.3.3/include"
-					"${CMAKE_CURRENT_SOURCE_DIR}/lib/glm")
+					"${CMAKE_CURRENT_SOURCE_DIR}/lib/glm"
+					"${CMAKE_CURRENT_SOURCE_DIR}/lib/stb_master")
 
 link_directories("C:/VulkanSDK/1.2.170.0/Lib"
 				 "${CMAKE_CURRENT_SOURCE_DIR}/lib/glfw-3.3.3/lib"
