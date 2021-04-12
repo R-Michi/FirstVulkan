@@ -3,6 +3,7 @@
 #define GLFW_INCLUDE_VULKAN	// includes vulkan internally in GLFW
 #include <GLFW/glfw3.h>
 #include <vector>
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 
 class FirstVulkan 
@@ -50,6 +51,11 @@ private:
 	VkImageLayout texture1_layout = VK_IMAGE_LAYOUT_PREINITIALIZED;
 	VkSampler texture1_sampler;
 
+	VkImage depth_image;
+	VkDeviceMemory depth_memory;
+	VkImageView depth_image_view;
+
+
 	VkDebugReportCallbackEXT debug_report_callback; 
 	
 	GLFWwindow* window;
@@ -91,9 +97,14 @@ private:
 	void vulkan_recrate_swapchain(void);
 	uint32_t vulkan_find_mem_type_index(uint32_t type_filter, VkMemoryPropertyFlags properties);
 	void vulkan_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage_flags, VkBuffer& buffer, VkMemoryPropertyFlags mem_flags, VkDeviceMemory& device_mem);
+	void vulkan_create_depth_image(VkPhysicalDevice physicalDevice, VkQueue queue);
 	void vulkan_copy_buffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
-	void vulkan_change_layout(VkCommandPool cmd_pool, VkQueue queue, VkImageLayout layout);
+	void vulkan_change_layout(VkCommandPool cmd_pool, VkQueue queue, VkImage img, VkFormat format, VkImageLayout& old_layout, VkImageLayout new_layout);
 	void vulkan_write_buffer_to_image(VkCommandPool cmd_pool, VkQueue queue, VkBuffer buff, int w, int h);
+	bool vulkan_is_format_supported(VkPhysicalDevice device, VkFormat format, VkImageTiling tiling, VkFormatFeatureFlags flags);
+	VkFormat vulkan_find_supported_format(VkPhysicalDevice device, const std::vector<VkFormat>& formats, VkImageTiling tiling, VkFormatFeatureFlags flags);
+	VkFormat vulkan_find_depth_format(VkPhysicalDevice physical_device);
+	bool vulkan_is_stencil_format(VkFormat format);
 	void vulkan_init(void);
 
 	template<typename T>

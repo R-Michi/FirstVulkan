@@ -67,15 +67,20 @@ void FirstVulkan::vertex_t::get_attrib_descriptions(std::vector<VkVertexInputAtt
 FirstVulkan::FirstVulkan(void)
 {
 	this->vertices = {
-		{ {-0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f }, {0.0f, 0.0f} },
-		{ { 0.5f,  0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f }, {1.0f, 1.0f} },
-		{ {-0.5f,  0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f }, {0.0f, 1.0f} },
-		{ { 0.5f, -0.5f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, {1.0f, 0.0f} }
+		{ {-0.5f, 0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f, 1.0f }, {0.0f, 0.0f} },
+		{ { 0.5f, 0.5f,  0.5f }, { 0.0f, 1.0f, 0.0f, 1.0f }, {1.0f, 1.0f} },
+		{ {-0.5f, 0.5f,  0.5f }, { 0.0f, 0.0f, 1.0f, 1.0f }, {0.0f, 1.0f} },
+		{ { 0.5f, 0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f, 1.0f }, {1.0f, 0.0f} },
+
+		{ {-0.5f, 0.0f, -0.5f }, { 1.0f, 0.0f, 0.0f, 1.0f }, {0.0f, 0.0f} },
+		{ { 0.5f, 0.0f,  0.5f }, { 0.0f, 1.0f, 0.0f, 1.0f }, {1.0f, 1.0f} },
+		{ {-0.5f, 0.0f,  0.5f }, { 0.0f, 0.0f, 1.0f, 1.0f }, {0.0f, 1.0f} },
+		{ { 0.5f, 0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f, 1.0f }, {1.0f, 0.0f} }
 
 	};
 
 	this->indices = {
-		0, 1, 2, 0, 3, 1
+		0, 2, 1, 0, 1, 3, 4, 6, 5, 4, 5, 7
 	};
 
 	this->width		= 400;
@@ -301,10 +306,27 @@ void FirstVulkan::vulkan_create_render_pass(void)
 	attachment_description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;		// layout before render pass
 	attachment_description.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;	// layout after render pass
 
+	// attachment description for depth buffer
+	VkAttachmentDescription depth_description = {};
+	depth_description.flags = 0;
+	depth_description.format = this->vulkan_find_depth_format(this->physical_devices[0]);
+	depth_description.samples = VK_SAMPLE_COUNT_1_BIT;
+	depth_description.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;		// clear at loading (begin of frame)
+	depth_description.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depth_description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	depth_description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depth_description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depth_description.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
 	// attachment reference for attachment description
 	VkAttachmentReference attachment_reference = {};
 	attachment_reference.attachment = 0;
 	attachment_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // layout during render pass
+
+	// attachment reference for depth map
+	VkAttachmentReference depth_attachment_reference = {};
+	depth_attachment_reference.attachment = 1;
+	depth_attachment_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	// sub pass equals one single draw call
 	VkSubpassDescription subpass_description = {};
@@ -315,7 +337,7 @@ void FirstVulkan::vulkan_create_render_pass(void)
 	subpass_description.colorAttachmentCount = 1;
 	subpass_description.pColorAttachments = &attachment_reference;
 	subpass_description.pResolveAttachments = nullptr;
-	subpass_description.pDepthStencilAttachment = nullptr;
+	subpass_description.pDepthStencilAttachment = &depth_attachment_reference;
 	subpass_description.preserveAttachmentCount = 0;
 	subpass_description.pPreserveAttachments = nullptr;
 
@@ -329,13 +351,18 @@ void FirstVulkan::vulkan_create_render_pass(void)
 	subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	subpass_dependency.dependencyFlags = 0;
 
+	std::vector<VkAttachmentDescription> attachments = {
+		attachment_description,
+		depth_description
+	};
+
 	// info for render pass
 	VkRenderPassCreateInfo renderpass_info = {};
 	renderpass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 	renderpass_info.pNext = nullptr;
 	renderpass_info.flags = 0;
-	renderpass_info.attachmentCount = 1;
-	renderpass_info.pAttachments = &attachment_description;
+	renderpass_info.attachmentCount = attachments.size();
+	renderpass_info.pAttachments = attachments.data();
 	renderpass_info.subpassCount = 1;
 	renderpass_info.pSubpasses = &subpass_description;
 	renderpass_info.dependencyCount = 1;
@@ -508,6 +535,20 @@ void FirstVulkan::vulkan_create_pipeline(void)
 	color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	color_blend_attachment.colorWriteMask = 0x0000000F; // enable every color channel (RGBA) 
 
+	VkPipelineDepthStencilStateCreateInfo depth_info;
+	depth_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depth_info.pNext = nullptr;
+	depth_info.flags = 0;
+	depth_info.depthTestEnable = VK_TRUE;
+	depth_info.depthWriteEnable = VK_TRUE;
+	depth_info.depthCompareOp = VK_COMPARE_OP_LESS;
+	depth_info.depthBoundsTestEnable = VK_FALSE;
+	depth_info.stencilTestEnable = VK_FALSE;
+	depth_info.front = {};
+	depth_info.back = {};
+	depth_info.minDepthBounds = 0.0f;
+	depth_info.maxDepthBounds = 1.0f;
+
 	VkPipelineColorBlendStateCreateInfo color_blend_info = {};
 	color_blend_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 	color_blend_info.pNext = nullptr;
@@ -559,7 +600,7 @@ void FirstVulkan::vulkan_create_pipeline(void)
 	pipeline_info.pViewportState = &viewport_state_info;
 	pipeline_info.pRasterizationState = &rasterizer_info;
 	pipeline_info.pMultisampleState = &multisample_state_info;
-	pipeline_info.pDepthStencilState = nullptr;
+	pipeline_info.pDepthStencilState = &depth_info;
 	pipeline_info.pColorBlendState = &color_blend_info;
 	pipeline_info.pDynamicState = &dynamic_state_info;	// can enable or disable certain things dynamically like in OpenGL (glEnable, glDisable)
 	pipeline_info.layout = this->pipeline_layout;
@@ -578,13 +619,18 @@ void FirstVulkan::vulkan_create_framebuffers(void)
 	this->fbos_swapchain = new VkFramebuffer[n_images_swapchain];
 	for (size_t i = 0; i < n_images_swapchain; i++)
 	{
+		std::vector<VkImageView> attachment_views = {
+			this->image_views[i],
+			this->depth_image_view
+		};
+		
 		VkFramebufferCreateInfo framebuffer_info = {};
 		framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		framebuffer_info.pNext = nullptr;
 		framebuffer_info.flags = 0;
 		framebuffer_info.renderPass = this->renderpass;
-		framebuffer_info.attachmentCount = 1;
-		framebuffer_info.pAttachments = this->image_views + i;
+		framebuffer_info.attachmentCount = attachment_views.size();
+		framebuffer_info.pAttachments = attachment_views.data();
 		framebuffer_info.width = width;
 		framebuffer_info.height = height;
 		framebuffer_info.layers = 1;
@@ -662,6 +708,7 @@ void FirstVulkan::vulkan_recrate_swapchain(void)
 
 	this->vulkan_create_swapchain();				// Old swapchain is saved in this->swapchain and then gets overwritten. New swapchain interits from the old swapchain.
 	this->vulkan_create_image_views();
+	this->vulkan_create_depth_image(this->physical_devices[0], this->queue);
 	this->vulkan_create_framebuffers();				// recreate framebuffers
 	this->vulkan_create_command_buffers();			// recreate command buffers
 	this->vulkan_record_command_buffers();			// command buffers must also recorded new
@@ -754,13 +801,13 @@ void FirstVulkan::vulkan_load_texture(void)
 	vkBindImageMemory(this->device, this->texture1_image, this->texture1_memory, 0);
 
 	// change layout of image that data can be transfered to the image memory
-	this->vulkan_change_layout(this->cmd_pool, this->queue, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	this->vulkan_change_layout(this->cmd_pool, this->queue, this->texture1_image, VK_FORMAT_R8G8B8A8_UNORM, this->texture1_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 	// write buffer to image
 	this->vulkan_write_buffer_to_image(this->cmd_pool, this->queue, texture1_staging_buffer, w, h);
 
 	// change layout of image that the shader can read the image most effectively
-	this->vulkan_change_layout(this->cmd_pool, this->queue, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	this->vulkan_change_layout(this->cmd_pool, this->queue, this->texture1_image, VK_FORMAT_R8G8B8A8_UNORM, this->texture1_layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 	vkDestroyBuffer(this->device, texture1_staging_buffer, nullptr);
 	vkFreeMemory(this->device, texture1_staging_buffer_mem, nullptr);
@@ -809,6 +856,76 @@ void FirstVulkan::vulkan_load_texture(void)
 	ASSERT_VULKAN(result);
 
 	stbi_image_free(img_data);
+}
+
+void FirstVulkan::vulkan_create_depth_image(VkPhysicalDevice physicalDevice, VkQueue queue)
+{
+	VkFormat depth_format = this->vulkan_find_depth_format(physicalDevice);
+
+	VkImageCreateInfo depth_info = {};
+	depth_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	depth_info.pNext = nullptr;
+	depth_info.flags = 0;
+	depth_info.imageType = VK_IMAGE_TYPE_2D;
+	depth_info.format = depth_format;
+	depth_info.extent.width = this->width;
+	depth_info.extent.height = this->height;
+	depth_info.extent.depth = 1;
+	depth_info.mipLevels = 1;
+	depth_info.arrayLayers = 1;
+	depth_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	depth_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	depth_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;	// pixels get transfered from staging buffer into the image and it should be sampled
+	depth_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	depth_info.queueFamilyIndexCount = 0;				// we dont share the queues between multiple queue families
+	depth_info.pQueueFamilyIndices = nullptr;
+	depth_info.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+
+	// create image for texture
+	VkResult result = vkCreateImage(this->device, &depth_info, nullptr, &this->depth_image);
+	ASSERT_VULKAN(result);
+
+	// memory requierements of texture's image
+	VkMemoryRequirements mem_req = {};
+	vkGetImageMemoryRequirements(this->device, this->depth_image, &mem_req);
+
+	// allocation info for texture's memory
+	VkMemoryAllocateInfo mem_alloc_info = {};
+	mem_alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	mem_alloc_info.pNext = nullptr;
+	mem_alloc_info.allocationSize = mem_req.size;
+	mem_alloc_info.memoryTypeIndex = this->vulkan_find_mem_type_index(mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// allocate actual memory on the GPU for the image
+	result = vkAllocateMemory(this->device, &mem_alloc_info, nullptr, &this->depth_memory);
+	ASSERT_VULKAN(result);
+
+	result = vkBindImageMemory(this->device, this->depth_image, this->depth_memory, 0);
+	ASSERT_VULKAN(result);
+
+	VkImageViewCreateInfo depth_img_view_info = {};
+	depth_img_view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	depth_img_view_info.pNext = nullptr;
+	depth_img_view_info.flags = 0;
+	depth_img_view_info.image = this->depth_image;
+	depth_img_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	depth_img_view_info.format = depth_format;
+	depth_img_view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	depth_img_view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	depth_img_view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	depth_img_view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	depth_img_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	depth_img_view_info.subresourceRange.baseMipLevel = 0;
+	depth_img_view_info.subresourceRange.levelCount = 1;
+	depth_img_view_info.subresourceRange.baseArrayLayer = 0;
+	depth_img_view_info.subresourceRange.layerCount = 1;
+
+	result = vkCreateImageView(this->device, &depth_img_view_info, nullptr, &this->depth_image_view);
+	ASSERT_VULKAN(result);
+
+	// change layout from depth buffer
+	VkImageLayout img_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+	this->vulkan_change_layout(this->cmd_pool, queue, this->depth_image, depth_format, img_layout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
 void FirstVulkan::vulkan_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage_flags, VkBuffer& buffer, VkMemoryPropertyFlags mem_flags, VkDeviceMemory& device_mem)
@@ -1020,9 +1137,17 @@ void FirstVulkan::vulkan_record_command_buffers(void)
 		render_pass_begin_info.framebuffer = this->fbos_swapchain[i];
 		render_pass_begin_info.renderArea.offset = { 0, 0 };			// render full screen (framebuffer) 
 		render_pass_begin_info.renderArea.extent = { width, height };
+
 		VkClearValue clear_color = { 0.0f, 0.0f, 0.0f, 1.0f };			// equivalent to glClearColor
-		render_pass_begin_info.clearValueCount = 1;
-		render_pass_begin_info.pClearValues = &clear_color;
+		VkClearValue depth_clear = { 1.0f, 0.0f };						// equivalent to glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)
+
+		std::vector<VkClearValue> clear_values = {
+			clear_color,
+			depth_clear
+		};
+
+		render_pass_begin_info.clearValueCount = clear_values.size();
+		render_pass_begin_info.pClearValues = clear_values.data();
 
 		// start render pass												// we only use primary command buffers
 		vkCmdBeginRenderPass(this->cmd_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
@@ -1061,14 +1186,14 @@ void FirstVulkan::vulkan_record_command_buffers(void)
 	}
 }
 
-void FirstVulkan::vulkan_change_layout(VkCommandPool cmd_pool, VkQueue queue, VkImageLayout layout)
+void FirstVulkan::vulkan_change_layout(VkCommandPool cmd_pool, VkQueue queue, VkImage img, VkFormat format, VkImageLayout& old_layout, VkImageLayout new_layout)
 {
 	VkCommandBufferAllocateInfo cmd_buff_info = {};
 	cmd_buff_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	cmd_buff_info.pNext = nullptr;
 	cmd_buff_info.commandPool = cmd_pool;
 	cmd_buff_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	cmd_buff_info.commandBufferCount = 1;
+	cmd_buff_info.commandBufferCount = 1; 
 
 	VkCommandBuffer tmp_cmd_buffer = {};
 	VkResult result = vkAllocateCommandBuffers(this->device, &cmd_buff_info, &tmp_cmd_buffer);
@@ -1088,35 +1213,49 @@ void FirstVulkan::vulkan_change_layout(VkCommandPool cmd_pool, VkQueue queue, Vk
 	mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	mem_barrier.pNext = nullptr;
 
-	if (this->texture1_layout == VK_IMAGE_LAYOUT_PREINITIALIZED && layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+	if (old_layout == VK_IMAGE_LAYOUT_PREINITIALIZED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
 	{
 		mem_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
 		mem_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 	}
-	else if (this->texture1_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+	else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 	{
 		mem_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 		mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	}
+	else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+	{
+		mem_barrier.srcAccessMask = 0;
+		mem_barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 	}
 	else
 	{
 		throw std::invalid_argument("Layout transition not yet supported!");
 	}
 
-	mem_barrier.oldLayout = this->texture1_layout;
-	mem_barrier.newLayout = layout;
+	mem_barrier.oldLayout = old_layout;
+	mem_barrier.newLayout = new_layout;
 	mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	mem_barrier.image = this->texture1_image;
-	mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	mem_barrier.image = img;
+	if (new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
+	{
+		mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (this->vulkan_is_stencil_format(format))
+			mem_barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT; 
+	}
+	else
+	{
+		mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	}
 	mem_barrier.subresourceRange.baseMipLevel = 0;
 	mem_barrier.subresourceRange.levelCount = 1;
 	mem_barrier.subresourceRange.baseArrayLayer = 0;
 	mem_barrier.subresourceRange.layerCount = 1;
 
-	if (this->texture1_layout == VK_IMAGE_LAYOUT_PREINITIALIZED && layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+	if (old_layout == VK_IMAGE_LAYOUT_PREINITIALIZED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
 		vkCmdPipelineBarrier(tmp_cmd_buffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &mem_barrier);
-	else if (this->texture1_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+	else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 		vkCmdPipelineBarrier(tmp_cmd_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &mem_barrier);
 
 	result = vkEndCommandBuffer(tmp_cmd_buffer);
@@ -1139,7 +1278,7 @@ void FirstVulkan::vulkan_change_layout(VkCommandPool cmd_pool, VkQueue queue, Vk
 
 	vkFreeCommandBuffers(this->device, cmd_pool, 1, &tmp_cmd_buffer);
 
-	this->texture1_layout = layout;
+	old_layout = new_layout;
 }
 
 void FirstVulkan::vulkan_write_buffer_to_image(VkCommandPool cmd_pool, VkQueue queue, VkBuffer buff, int w, int h)
@@ -1198,6 +1337,41 @@ void FirstVulkan::vulkan_write_buffer_to_image(VkCommandPool cmd_pool, VkQueue q
 	vkFreeCommandBuffers(this->device, cmd_pool, 1, &tmp_cmd_buffer);
 }
 
+bool FirstVulkan::vulkan_is_format_supported(VkPhysicalDevice device, VkFormat format, VkImageTiling tiling, VkFormatFeatureFlags flags)
+{
+	VkFormatProperties format_prop = {};
+	vkGetPhysicalDeviceFormatProperties(device, format, &format_prop);
+
+	if (tiling == VK_IMAGE_TILING_LINEAR && (format_prop.linearTilingFeatures & flags) == flags)		return true;
+	else if (tiling == VK_IMAGE_TILING_OPTIMAL && (format_prop.optimalTilingFeatures & flags) == flags) return true;
+	return false;
+}
+
+VkFormat FirstVulkan::vulkan_find_supported_format(VkPhysicalDevice device, const std::vector<VkFormat>& formats, VkImageTiling tiling, VkFormatFeatureFlags flags)
+{
+	for (VkFormat format : formats)
+	{
+		if (this->vulkan_is_format_supported(device, format, tiling, flags))
+			return format;
+	}
+	throw std::runtime_error("No supported format found!");
+}
+
+VkFormat FirstVulkan::vulkan_find_depth_format(VkPhysicalDevice physical_device)
+{
+	std::vector<VkFormat> possible_formats = {
+		VK_FORMAT_D32_SFLOAT_S8_UINT,
+		VK_FORMAT_D24_UNORM_S8_UINT,
+		VK_FORMAT_D32_SFLOAT
+	};
+	return this->vulkan_find_supported_format(physical_device, possible_formats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+}
+
+bool FirstVulkan::vulkan_is_stencil_format(VkFormat format)
+{
+	return (format == VK_FORMAT_D32_SFLOAT_S8_UINT || VK_FORMAT_D24_UNORM_S8_UINT);
+}
+
 void FirstVulkan::vulkan_init(void)
 {
 	this->vulkan_create_app_info();
@@ -1212,8 +1386,9 @@ void FirstVulkan::vulkan_init(void)
 	this->vulkan_create_shader_modules();
 	this->vulkan_create_descriptor_set_layout();
 	this->vulkan_create_pipeline();
-	this->vulkan_create_framebuffers();
 	this->vulkan_create_command_pool();
+	this->vulkan_create_depth_image(this->physical_devices[0], this->queue);
+	this->vulkan_create_framebuffers();
 	this->vulkan_load_texture();
 	this->vulkan_create_vertex_buffer();
 	this->vulkan_create_uniform_buffer();
@@ -1254,6 +1429,10 @@ void FirstVulkan::glfw_init(void)
 void FirstVulkan::vulkan_destroy(void)
 {
 	vkDeviceWaitIdle(this->device);
+
+	vkDestroyImageView(this->device, this->depth_image_view, nullptr);
+	vkDestroyImage(this->device, this->depth_image, nullptr);
+	vkFreeMemory(this->device, this->depth_memory, nullptr);
 
 	vkDestroySampler(this->device, this->texture1_sampler, nullptr);
 	vkDestroyImageView(this->device, this->texture1_view, nullptr);
